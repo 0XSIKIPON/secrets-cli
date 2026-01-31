@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  # Create pre-release when merging to main
+  pre-release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest release tag
+        id: latest
+        run: |
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Generate next version
+        id: version
+        run: |
+          LATEST="${{ steps.latest.outputs.tag }}"
+          # Strip 'v' prefix and increment patch
+          VERSION=${LATEST#v}
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          PATCH=$(echo $VERSION | cut -d. -f3)
+          NEXT_PATCH=$((PATCH + 1))
+          NEXT_VERSION="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
+          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          LATEST="${{ steps.latest.outputs.tag }}"
+          echo "## Changes since ${LATEST}" > notes.md
+          echo "" >> notes.md
+          
+          if git rev-parse "$LATEST" >/dev/null 2>&1; then
+            git log ${LATEST}..HEAD --pretty=format:"- %s (%h)" >> notes.md
+          else
+            git log --pretty=format:"- %s (%h)" -20 >> notes.md
+          fi
+
+      - name: Create pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }} (pre-release)
+          body_path: notes.md
+          prerelease: true
+          generate_release_notes: false
+
+  # Build and attach artifacts when release is published (promoted from pre-release)
+  build-release:
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Build for all platforms
+        run: |
+          VERSION=${{ github.event.release.tag_name }}
+          make build-all VERSION=$VERSION
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/secrets-cli-linux-amd64
+            dist/secrets-cli-linux-arm64
+            dist/secrets-cli-darwin-amd64
+            dist/secrets-cli-darwin-arm64

@@ -1,0 +1,22 @@
+# Build artifacts
+secrets-cli
+dist/
+
+# Test artifacts
+coverage.out
+test-results.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets directory (never commit actual secrets)
+# Note: .secrets/ IS meant to be committed (encrypted), 
+# but local test directories should be ignored
+/test-project/
