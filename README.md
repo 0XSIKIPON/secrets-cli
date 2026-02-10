@@ -172,6 +172,140 @@ Use `secrets-cli <command> --help` for detailed usage information.
 2. Set up access: `secrets-cli setup --email developer@company.com`
 3. View secrets: `secrets-cli get production database/url`
 
+## GPG Key Sharing Workflow
+
+When adding a new team member to the secrets store, follow this workflow:
+
+### Step 1: User Generates GPG Key
+
+The new team member should first check if they have a GPG key, and generate one if needed:
+
+```bash
+# Check for existing GPG keys
+gpg --list-secret-keys
+
+# If no key exists, generate one
+gpg --gen-key
+```
+
+During key generation, you'll be prompted for:
+- **Name**: Your full name
+- **Email**: Use the email address that matches your Git configuration (this must match what the admin will use)
+- **Passphrase**: Choose a strong passphrase to protect your private key
+
+> **Important:** The email address used during key generation must match the email the admin will use to grant you access.
+
+### Step 2: User Exports Public Key
+
+Export your public key to share with the admin:
+
+```bash
+# Export to a file
+gpg --armor --export your@email.com > my-gpg-key.asc
+
+# Or copy directly to clipboard (Linux with xclip)
+gpg --armor --export your@email.com | xclip -selection clipboard
+
+# Or copy to clipboard (macOS)
+gpg --armor --export your@email.com | pbcopy
+```
+
+The exported key will look like this:
+
+```
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mQINBGa...
+...
+-----END PGP PUBLIC KEY BLOCK-----
+```
+
+### Step 3: User Adds Their Key to the Repository
+
+**Option A: Self-Service via Pull Request** (Recommended if you have repo access)
+
+If you have repository access, you can add your own key:
+
+```bash
+# Clone the repository if you haven't already
+git clone git@github.com:org/repo.git
+cd repo
+
+# Create a branch
+git checkout -b add-my-gpg-key
+
+# Add your key to secrets-cli
+secrets-cli key add your@email.com
+
+# Commit and push
+git add .secrets/keys/
+git commit -m "Add GPG key for your@email.com"
+git push origin add-my-gpg-key
+
+# Create a pull request for admin review
+```
+
+**Option B: Send Key to Admin**
+
+If you don't have repository access yet, send the exported key file (`my-gpg-key.asc`) or text to your admin via:
+- Email
+- Slack, Teams, or other team chat
+- Secure file sharing service
+
+### Step 4: Admin Grants Vault Access
+
+After the user's key is added (either via merged PR or by the admin), the admin grants access to specific vaults:
+
+```bash
+# If the user sent their key directly, import and add it first
+gpg --import user-gpg-key.asc
+secrets-cli key add user@email.com
+
+# Grant access to specific vaults
+secrets-cli vault add-member production user@email.com
+secrets-cli vault add-member dev user@email.com
+
+# Commit and push changes
+git add .secrets
+git commit -m "Grant user@email.com access to production and dev vaults"
+git push
+```
+
+The `key add` command:
+- Stores the user's public key in `.secrets/keys/`
+- Makes it available for vault encryption
+
+The `vault add-member` command:
+- Adds the user to the vault's member list
+- Re-encrypts all secrets in that vault to include the new member's key
+
+> **Security Note:** Adding a key to `.secrets/keys/` does NOT grant access to any secrets. The admin must explicitly grant vault access using `vault add-member`.
+
+### Step 5: User Sets Up Access
+
+After the admin pushes the changes, the new team member can set up their access:
+
+```bash
+# Pull the latest changes
+git pull
+
+# Set up access (imports keys and configures pass)
+secrets-cli setup --email your@email.com
+
+# Verify access by listing available vaults
+secrets-cli vault list
+
+# Test reading a secret
+secrets-cli get production database/url
+```
+
+The `setup` command will:
+- Import all team members' public keys from `.secrets/keys/` to your GPG keyring
+- Initialize the `pass` password store
+- Configure access to decrypt secrets in vaults you're a member of
+
+> **Tip:** If `--email` is not provided, secrets-cli will auto-detect your email from `git config user.email`.
+
 ## Configuration
 
 ### Global Flags
